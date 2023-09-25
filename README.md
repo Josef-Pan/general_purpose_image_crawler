@@ -1,6 +1,6 @@
 # general_purpose_image_crawler
-This is a general purpose image crawler that works for most websites
-This program will crawl website and download images at deisired size in separate processes. 
+This is a general purpose image crawler that works for most websites without recursion. This program will crawl website and download images at deisired size in separate processes. 
+
 1. It will save visited URLs and downloaded images into 2 ini files. Make sure you delete them if you want to crawl the whole website again ignoring links visited before.
 2. A file called excepts.ini with all unwanted urls can prevent crawling into those links. Each line is an excepted link in format like /football/. A sample ini can be generated with the command --excepts_sample. You may edit the excepts.ini in the process of crawling, the program will reload it every 200 rounds, the same case with censor.ini.
 3. A file called censor.ini with all unwanted keywords in the link can prevent crawling into those links. Unlike excepts.ini, censor.ini search the whole link, not only the start.
