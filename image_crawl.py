@@ -133,7 +133,7 @@ def fields_in_url(url):
 
 def keep_only_unique_urls(visited_urls: list[str]) -> list[str]:
     """
-    Remove the first level path from URLs that end with 'html', 'htm', or 'shtml'.
+    Remove the category urls.
     URLs that have the same first level path are considered categories, not webpages.
     :param visited_urls: List of visited URLs
     :return: List of URLs not categories, but ony webpages
