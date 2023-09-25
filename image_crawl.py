@@ -447,7 +447,7 @@ def crawl_website(*, cfg: Configurations, depth: int, connection: Queue, images_
                 link_href = link_tag['href']
                 now = f"\033[35m{datetime.datetime.now().strftime(f'%Y%m%d-%H:%M:%S')}\033[0m"
                 print(f"{now}(\033[36m{counter}\033[0m)Adding :{link_href[:60]:60}\033[1;36m"
-                      f"({depth:<{digits_of_depth}d}) \033[0m{fmt_string}")
+                      f"({depth + 1:<{digits_of_depth}d}) \033[0m{fmt_string}")
                 url_to_append = urljoin(url, link_href)
                 stack.append((url_to_append, depth + 1)) if url_to_append.startswith(cfg.url) else ()
             if counter % 200 == 0:
