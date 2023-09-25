@@ -640,10 +640,3 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         early_exit_by_ctrl_c(configurations)
 # endregion
-
-"""
-这几乎是一个万能的爬虫，注意事项
-1）每个网站我们需要排除的内部链接要写在cfg.excepted_urls
-2) 如何知道哪些需要排除，就运行一遍--dry_run，此时只遍历，不下载，看看哪些内容我们不需要
-3) 哪些visited_url要排除掉，不能写入记录，便于下次仍然访问，要仔细分析
-"""
