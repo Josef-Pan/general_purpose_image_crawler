@@ -54,14 +54,14 @@ class Configurations:
         if args.excepts:
             [self.excepted_urls.append(item) for item in args.excepts]
         self.update_excepts_and_censor_ini()
+        self.__setup_locked_url_or_start_from()
         self.dir_from_url = dir_name_from_url(url=self.url)
         self.visited_urls_log = f"crawl-visited-urls-{self.dir_from_url}.ini"
         self.downloaded_log = f"crawl-downloaded-{self.dir_from_url}.ini"
         four_dirs = [self.dir_marked, self.dir_images, self.dir_large, self.dir_labels]
         self.website_root_dir = os.path.join(self.root_save, self.dir_from_url)
         [os.makedirs(os.path.join(self.website_root_dir, d), exist_ok=True) for d in four_dirs]
-        self.__setup_locked_url_or_start_from()
-
+        
     def update_excepts_and_censor_ini(self, printout=True):
         excepts_ini = os.path.join(self.working_path, "excepts.ini")
         if os.path.isfile(excepts_ini):
@@ -101,7 +101,7 @@ class Configurations:
                         self.allowed_urls.append(item)
                         self.allowed_urls.append(urljoin(self.url, item))
                         self.allowed_urls.append(re.sub(r"https://|http://", "//", urljoin(self.url, item)))
-            print(f"Search is restricted within \033[36m{self.allowed_urls}\033[0m")
+                print(f"\033[1;31mSearch is restricted within \033[36m{self.allowed_urls}\033[0m")
 
     def debug_print(self, *argv, **kwargs):
         caller = inspect.currentframe().f_back.f_code.co_name
