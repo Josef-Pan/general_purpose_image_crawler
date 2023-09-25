@@ -19,15 +19,13 @@ class Configurations:
         self.working_path = os.path.abspath(os.path.dirname(sys.argv[0]))
         self.log_file = os.path.splitext(os.path.abspath(sys.argv[0]))[0] + '.log'
         self.supported_image_formats = [".jpg", ".png", ".jpeg"]
-        self.recursive_depth_limit = None
-        self.max_recursive_depth = 0
         self.website_root_dir = None  # self.website_root_dir = args.root_save + self.dir_from_url
         self.dir_from_url = None
-        self.url = None  # 初始URL, 由args提供
-        self.visited_urls = set()  # 记录已访问的URL
-        self.image_urls = set()  # 记录带有图片的URL
-        self.image_urls_history = set()  # 记录带有图片的URL
-        self.images_downloaded = None  # crawl_website 负责更新
+        self.url = None  # Provided by args
+        self.visited_urls = set()  # urls already visited, provided by ini file and updated by program
+        self.image_urls = set()  # image urls already downloaded, updated by program
+        self.image_urls_history = set()  # image urls already downloaded previously, provided by ini 
+        self.images_downloaded = None  # Total number of images downloaded, updated by the download workers
         self.dir_marked = 'images.marked'
         self.dir_images = 'images'
         self.dir_large = 'images.large'
@@ -35,16 +33,14 @@ class Configurations:
         self.visited_urls_log = None  # A base name, NOT full path, set up in self.update_from
         self.downloaded_log = None  # A base name, NOT full path, set up in self.update_from
         self.download_processes: list[Process] = []
-        # 限定的url，必须在这个url下面
         self.locked_url = None
         self.allowed_urls = None
         self.censored_words = []  # Provided by file named censor.ini
-        # 不希望访问的url，
         self.unwanted_starts = ['javascript', 'webcal:', 'file:', 'mailto:', 'tel:', 'ftp:', 'magnet:', '#', '?',
                                 'whatsapp:', 'twitter:', 'instagram:', 'weixin:', 'weibo:', 'sms:']
-        self.excepted_urls = []  # 由args.excepts指定，或者excepts.ini指定，或者两者同时
+        self.excepted_urls = []  # Provided by args, a file called excepts.ini or both
         self.connection_failures = 0
-        self.max_failures = 3  # 最大失败次数 ，由args指定
+        self.max_failures = None  # Maximum failure torlerence, provided by args 
 
     def update_from_cmd_args(self, args: argparse.Namespace):
         """
