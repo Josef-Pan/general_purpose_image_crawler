@@ -1,13 +1,15 @@
 import argparse, io, datetime, inspect, re, sys, os, uuid, tqdm
 import ctypes, shutil, time
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 import requests
 from multiprocessing import Process, Value, Queue, Lock
 from queue import Empty, Full
 from PIL import Image
-from utils import get_file_contents_v4, save_to_file, print_exception, glob_image_files
+from josefutils import get_file_contents_v4, save_to_file, print_exception, glob_image_files
+
+URLFields = namedtuple('URLFields', ['http_or_https', 'fields'])
 
 
 class Configurations:
@@ -22,9 +24,10 @@ class Configurations:
         self.website_root_dir = None  # self.website_root_dir = args.root_save + self.dir_from_url
         self.dir_from_url = None
         self.url = None  # Provided by args
+        self.start_from = None
         self.visited_urls = set()  # urls already visited, provided by ini file and updated by program
         self.image_urls = set()  # image urls already downloaded, updated by program
-        self.image_urls_history = set()  # image urls already downloaded previously, provided by ini 
+        self.image_urls_history = set()  # image urls already downloaded previously, provided by ini
         self.images_downloaded = None  # Total number of images downloaded, updated by the download workers
         self.dir_marked = 'images.marked'
         self.dir_images = 'images'
@@ -40,7 +43,7 @@ class Configurations:
                                 'whatsapp:', 'twitter:', 'instagram:', 'weixin:', 'weibo:', 'sms:']
         self.excepted_urls = []  # Provided by args, a file called excepts.ini or both
         self.connection_failures = 0
-        self.max_failures = None  # Maximum failure torlerence, provided by args 
+        self.max_failures = None  # Maximum failure torlerence, provided by args
 
     def update_from_cmd_args(self, args: argparse.Namespace):
         """
@@ -57,7 +60,7 @@ class Configurations:
         four_dirs = [self.dir_marked, self.dir_images, self.dir_large, self.dir_labels]
         self.website_root_dir = os.path.join(self.root_save, self.dir_from_url)
         [os.makedirs(os.path.join(self.website_root_dir, d), exist_ok=True) for d in four_dirs]
-        self.__setup_locked_url() if not self.no_lock else ()
+        self.__setup_locked_url_or_start_from()
 
     def update_excepts_and_censor_ini(self, printout=True):
         excepts_ini = os.path.join(self.working_path, "excepts.ini")
@@ -77,19 +80,25 @@ class Configurations:
             self.censored_words.sort()
             save_to_file(file_name=censor_ini, contents=self.censored_words)
 
-    def __setup_locked_url(self):
+    def __setup_locked_url_or_start_from(self):
         # "https://www.cbc.ca/kidsnews/" ->kidsnews fields = ['www.cbc.ca', 'kidsnews']
-        fields = re.sub(r"http.*//(.*)", r"\1", self.url.rstrip('/')).split('/')
+        http_or_https, fields = fields_in_url(self.url)
         if len(fields) > 1:
-            self.locked_url = '/' + '/'.join(fields[1:])
-            self.url = re.search(r"(http.*://.*?/).*", self.url)[1]
-            self.allowed_urls = [self.locked_url, urljoin(self.url, self.locked_url),
-                                 re.sub(r"https://|http://", "//", urljoin(self.url, self.locked_url))]
-            if self.custom_lock:
+            if self.no_lock:
+                self.start_from = '/' + '/'.join(fields[1:])
+                base_url = http_or_https + self.url.rstrip('/').replace(http_or_https, "").split('/')[0]
+                self.url = base_url + '/'
+            elif self.custom_lock:
                 for item in self.custom_lock:
                     self.allowed_urls.append(item)
                     self.allowed_urls.append(urljoin(self.url, item))
                     self.allowed_urls.append(re.sub(r"https://|http://", "//", urljoin(self.url, item)))
+            else:  # lock to subdomains
+                self.locked_url = '/' + '/'.join(fields[1:])
+                self.url = re.search(r"(http.*://.*?/).*", self.url)[1]
+                self.allowed_urls = [self.locked_url, urljoin(self.url, self.locked_url),
+                                     re.sub(r"https://|http://", "//", urljoin(self.url, self.locked_url))]
+
             print(f"Search is restricted within \033[36m{self.allowed_urls}\033[0m")
 
     def debug_print(self, *argv, **kwargs):
@@ -128,12 +137,12 @@ def fields_in_url(url):
     """
     http_or_https = url.split('//')[0] + '//'
     fields = url.rstrip('/').replace(http_or_https, "").split('/')
-    return fields
+    return URLFields(http_or_https, fields)
 
 
 def keep_only_unique_urls(visited_urls: list[str]) -> list[str]:
     """
-    Remove the category urls.
+    Remove the first level path from URLs that end with 'html', 'htm', or 'shtml'.
     URLs that have the same first level path are considered categories, not webpages.
     :param visited_urls: List of visited URLs
     :return: List of URLs not categories, but ony webpages
@@ -213,7 +222,9 @@ def is_link_acceptable(cfg, link_href: str):
     Returns:
         bool: True if the link is acceptable, False otherwise.
     """
-    base_url, href = cfg.url.rstrip('/'), link_href.rstrip('/')
+    http_or_https = cfg.url.split('//')[0] + '//'
+    base_url = http_or_https + cfg.url.rstrip('/').replace(http_or_https, "").split('/')[0]
+    href = link_href.rstrip('/')
     if href.startswith('//'):
         href = urljoin(cfg.url, href)
     url_without_base = href.replace(base_url, "")
@@ -427,12 +438,12 @@ def crawl_website(*, cfg: Configurations, depth: int, connection: Queue, images_
                           f"D: \033[36m{images_downloaded.value}\033[0m")  # Images downloaded
             now = f"\033[35m{datetime.datetime.now().strftime(f'%Y%m%d-%H:%M:%S')}\033[0m"
             info_str = (f"{now}(\033[36m{counter}\033[0m)Current:\033[32m{url[:60]:60}\033[0m\033[1;32m"
-                        f"{depth:<6d}) \033[0m{fmt_string}")
+                        f"({depth}) \033[0m{fmt_string}")
             print(info_str)
             for link_tag in link_tags:
                 link_href = link_tag['href']
                 now = f"\033[35m{datetime.datetime.now().strftime(f'%Y%m%d-%H:%M:%S')}\033[0m"
-                print(f"{now}(\033[36m{counter}\033[0m)Adding :{link_href[:60]:60}\033[1;36m({depth + 1:<6d}) \033[0m"
+                print(f"{now}(\033[36m{counter}\033[0m)Adding :{link_href[:60]:60}\033[1;36m({depth + 1}) \033[0m"
                       f"{fmt_string}")
                 url_to_append = urljoin(url, link_href)
                 stack.append((url_to_append, depth + 1)) if url_to_append.startswith(cfg.url) else ()
@@ -591,7 +602,7 @@ def parse_arguments():
     parser.add_argument("--root_save", default='/media/usb0/crawls/', help="Root dir to save", type=str)
     group = parser.add_mutually_exclusive_group()
     group.add_argument("-S", "--start_from", help="The url we start from instead of the homepage", type=str)
-    group.add_argument("-N", "--no_lock", help="Do not lock url to subfields even url has more fields",
+    group.add_argument("-N", "--no_lock", help="Do not lock url to subfields even url has subdomains",
                        action="store_true")
     group.add_argument("-C", "--custom_lock", nargs='+', help="Except locked url, more fields are allowed", type=str)
     parser.add_argument("-W", "--num_workers", metavar='N', help=helps['num_workers'], default=3, type=int)
@@ -640,3 +651,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         early_exit_by_ctrl_c(configurations)
 # endregion
+
