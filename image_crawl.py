@@ -479,9 +479,6 @@ def operations_worker(cfg: Configurations):
     if not cfg.keep_log:
         os.remove(cfg.log_file) if os.path.exists(cfg.log_file) else ()
 
-    # Queue是一种高级封装：Queue是一个在底层使用Pipe来实现的高级封装。它提供了更简单的接口，
-    # 只需使用put和get方法来放置和获取数据，而不必担心连接
-    # child_conn, parent_conn = Pipe(duplex=False)
     queue = Queue()
     lock = Lock()
     # File directories
