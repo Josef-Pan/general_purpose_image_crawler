@@ -83,22 +83,24 @@ class Configurations:
     def __setup_locked_url_or_start_from(self):
         # "https://www.cbc.ca/kidsnews/" ->kidsnews fields = ['www.cbc.ca', 'kidsnews']
         http_or_https, fields = fields_in_url(self.url)
+        base_url = http_or_https + self.url.rstrip('/').replace(http_or_https, "").split('/')[0]
+        self.url = base_url + '/'
         if len(fields) > 1:
-            if self.no_lock:
+            if self.no_lock:  # We interpret subdomains as start_from
                 self.start_from = '/' + '/'.join(fields[1:])
-                base_url = http_or_https + self.url.rstrip('/').replace(http_or_https, "").split('/')[0]
-                self.url = base_url + '/'
-            elif self.custom_lock:
-                for item in self.custom_lock:
-                    self.allowed_urls.append(item)
-                    self.allowed_urls.append(urljoin(self.url, item))
-                    self.allowed_urls.append(re.sub(r"https://|http://", "//", urljoin(self.url, item)))
-            else:  # lock to subdomains
+            else:  # We interpret subdomains as locked_to subdomains
                 self.locked_url = '/' + '/'.join(fields[1:])
-                self.url = re.search(r"(http.*://.*?/).*", self.url)[1]
-                self.allowed_urls = [self.locked_url, urljoin(self.url, self.locked_url),
-                                     re.sub(r"https://|http://", "//", urljoin(self.url, self.locked_url))]
-
+                fields_without_html = [field for field in fields if not field.endswith(('html', 'htm', 'php', 'shtml'))]
+                if '.php?' in fields_without_html[-1]:
+                    fields_without_html = fields_without_html[:-1]
+                locked_subdomain = '/' + '/'.join(fields_without_html[1:])
+                self.allowed_urls = [locked_subdomain, urljoin(self.url, locked_subdomain),
+                                     re.sub(r"https://|http://", "//", urljoin(self.url, locked_subdomain))]
+                if self.custom_lock:
+                    for item in self.custom_lock:
+                        self.allowed_urls.append(item)
+                        self.allowed_urls.append(urljoin(self.url, item))
+                        self.allowed_urls.append(re.sub(r"https://|http://", "//", urljoin(self.url, item)))
             print(f"Search is restricted within \033[36m{self.allowed_urls}\033[0m")
 
     def debug_print(self, *argv, **kwargs):
@@ -437,14 +439,15 @@ def crawl_website(*, cfg: Configurations, depth: int, connection: Queue, images_
                           f"I: \033[35m{len(image_urls)} \033[0m"  # Images found
                           f"D: \033[36m{images_downloaded.value}\033[0m")  # Images downloaded
             now = f"\033[35m{datetime.datetime.now().strftime(f'%Y%m%d-%H:%M:%S')}\033[0m"
+            digits_of_depth = max(len(str(depth)), len(str(depth + 1)))
             info_str = (f"{now}(\033[36m{counter}\033[0m)Current:\033[32m{url[:60]:60}\033[0m\033[1;32m"
-                        f"({depth}) \033[0m{fmt_string}")
+                        f"({depth:<{digits_of_depth}d}) \033[0m{fmt_string}")
             print(info_str)
             for link_tag in link_tags:
                 link_href = link_tag['href']
                 now = f"\033[35m{datetime.datetime.now().strftime(f'%Y%m%d-%H:%M:%S')}\033[0m"
-                print(f"{now}(\033[36m{counter}\033[0m)Adding :{link_href[:60]:60}\033[1;36m({depth + 1}) \033[0m"
-                      f"{fmt_string}")
+                print(f"{now}(\033[36m{counter}\033[0m)Adding :{link_href[:60]:60}\033[1;36m"
+                      f"({depth:<{digits_of_depth}d}) \033[0m{fmt_string}")
                 url_to_append = urljoin(url, link_href)
                 stack.append((url_to_append, depth + 1)) if url_to_append.startswith(cfg.url) else ()
             if counter % 200 == 0:
