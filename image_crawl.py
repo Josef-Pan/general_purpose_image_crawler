@@ -7,7 +7,7 @@ import requests
 from multiprocessing import Process, Value, Queue, Lock
 from queue import Empty, Full
 from PIL import Image
-from josefutils import get_file_contents_v4, save_to_file, print_exception, glob_image_files
+from utils import get_file_contents_v4, save_to_file, print_exception, glob_image_files
 
 URLFields = namedtuple('URLFields', ['http_or_https', 'fields'])
 
