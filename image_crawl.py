@@ -153,7 +153,8 @@ def keep_only_unique_urls(visited_urls: list[str]) -> list[str]:
         return visited_urls
     visited_urls = list(visited_urls)
     http_or_https = visited_urls[0].split('//')[0] + '//'
-    index_html_urls = [f"index{i}.html" for i in range(1, 10)]
+    index_html_urls = ['index.html', 'index.htm', 'index.shtml', 'index.php']
+    index_html_urls += [f"index{i}.html" for i in range(1, 10)]
     index_html_urls += [f"index{i}.htm" for i in range(1, 10)]
     index_html_urls += [f"index{i}.shtml" for i in range(1, 10)]
     index_html_urls += [f"index{i}.php" for i in range(1, 10)]
