@@ -7,7 +7,7 @@ import requests
 from multiprocessing import Process, Value, Queue, Lock
 from queue import Empty, Full
 from PIL import Image
-from utils import get_file_contents_v4, save_to_file, print_exception, glob_image_files
+from josefutils import get_file_contents_v4, save_to_file, print_exception, glob_image_files
 
 URLFields = namedtuple('URLFields', ['http_or_https', 'fields'])
 
@@ -61,7 +61,7 @@ class Configurations:
         four_dirs = [self.dir_marked, self.dir_images, self.dir_large, self.dir_labels]
         self.website_root_dir = os.path.join(self.root_save, self.dir_from_url)
         [os.makedirs(os.path.join(self.website_root_dir, d), exist_ok=True) for d in four_dirs]
-        
+
     def update_excepts_and_censor_ini(self, printout=True):
         excepts_ini = os.path.join(self.working_path, "excepts.ini")
         if os.path.isfile(excepts_ini):
@@ -153,7 +153,12 @@ def keep_only_unique_urls(visited_urls: list[str]) -> list[str]:
         return visited_urls
     visited_urls = list(visited_urls)
     http_or_https = visited_urls[0].split('//')[0] + '//'
-    urls_with_html = [url for url in visited_urls if url.endswith(('html', 'htm', 'shtml'))]
+    index_html_urls = [f"index{i}.html" for i in range(1, 10)]
+    index_html_urls += [f"index{i}.htm" for i in range(1, 10)]
+    index_html_urls += [f"index{i}.shtml" for i in range(1, 10)]
+    index_html_urls += [f"index{i}.php" for i in range(1, 10)]
+    urls_with_html = [url for url in visited_urls if url.endswith(('html', 'htm', 'shtml', 'php')) and
+                      not any([url.endswith(k) for k in index_html_urls])]
     urls_no_html = [url.rstrip('/') + '/' for url in visited_urls if not url.endswith(('html', 'htm', 'shtml'))]
     url_counts = defaultdict(int)
     for url in urls_no_html:
@@ -430,23 +435,25 @@ def crawl_website(*, cfg: Configurations, depth: int, connection: Queue, images_
                          e['href'] not in [ee['href'] for ee in link_tags][:idx]]
             link_tags.sort(key=lambda link_tag_: custom_sort_key(link_tag_['href']),
                            reverse=False if cfg.depth_first else True)
+            current_depth_urls = [u for u, d in stack if d == depth]
+            len_current_depth = len(current_depth_urls)
             link_tags = [e for e in link_tags if urljoin(url, e['href']) not in visited_urls]
             if len(link_tags):
                 print("")
-            len_current_depth = len([item for item, d in stack if d == depth])
             fmt_string = (f"\033[36m{len_current_depth}/\033[1;36m{len(stack)}, Q: {qsize:2d}\033[0m "
                           f"E: \033[1;31m{cfg.connection_failures}\033[0m "  # Connection errors
                           f"I: \033[35m{len(image_urls)} \033[0m"  # Images found
                           f"D: \033[36m{images_downloaded.value}\033[0m")  # Images downloaded
             now = f"\033[35m{datetime.datetime.now().strftime(f'%Y%m%d-%H:%M:%S')}\033[0m"
             digits_of_depth = max(len(str(depth)), len(str(depth + 1)))
-            info_str = (f"{now}(\033[36m{counter}\033[0m)Current:\033[32m{url[:60]:60}\033[0m\033[1;32m"
+            info_str = (f"{now}(\033[36m{counter}\033[0m)Crawling:\033[32m{url[:60]:60}\033[0m\033[1;32m"
                         f"({depth:<{digits_of_depth}d}) \033[0m{fmt_string}")
             print(info_str)
             for link_tag in link_tags:
                 link_href = link_tag['href']
                 now = f"\033[35m{datetime.datetime.now().strftime(f'%Y%m%d-%H:%M:%S')}\033[0m"
-                print(f"{now}(\033[36m{counter}\033[0m)Adding :{link_href[:60]:60}\033[1;36m"
+                link_output = link_href.replace(cfg.url.rstrip('/'), '')
+                print(f"{now}(\033[36m{counter}\033[0m)Adding  :{link_output[:60]:60}\033[1;36m"
                       f"({depth + 1:<{digits_of_depth}d}) \033[0m{fmt_string}")
                 url_to_append = urljoin(url, link_href)
                 stack.append((url_to_append, depth + 1)) if url_to_append.startswith(cfg.url) else ()
@@ -456,7 +463,8 @@ def crawl_website(*, cfg: Configurations, depth: int, connection: Queue, images_
                 save_to_file(cfg.log_file, [info_str], append=True)
                 save_visited_url_and_downloaded_images(cfg, del_empty=False, print_info=False)
                 cfg.update_excepts_and_censor_ini(printout=False)  # Reload the excepts and censored words
-        except requests.exceptions.RequestException as e:
+        #except requests.exceptions.RequestException as e:
+        except Exception as e:
             print_exception(e)
             time.sleep(cfg.connection_failures * 60)
             cfg.connection_failures += 1
@@ -551,7 +559,7 @@ def operations_worker(cfg: Configurations):
 
 # region ✅ Program Entry
 def parse_arguments():
-    description = ("This program will crawl website and download images at deisired size in separate processes. \n"
+    description = ("This program will crawl website and download images at desired size in separate processes. \n"
                    "\033[31m1\033[0m. It will save visited URLs and downloaded images into 2 ini files. Make sure "
                    "you delete them if you want to crawl the whole website again ignoring links visited before. \n"
                    "\033[31m2\033[0m. A file called excepts.ini with all unwanted urls can prevent crawling into those "
