@@ -1,7 +1,7 @@
 import argparse, io, datetime, inspect, re, sys, os, uuid, tqdm
 import ctypes, shutil, time
 from collections import defaultdict, namedtuple
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 from bs4 import BeautifulSoup
 import requests
 from multiprocessing import Process, Value, Queue, Lock
@@ -9,7 +9,7 @@ from queue import Empty, Full
 from PIL import Image
 from josefutils import get_file_contents_v4, save_to_file, print_exception, glob_image_files
 
-URLFields = namedtuple('URLFields', ['http_or_https', 'fields'])
+URLTemplate = namedtuple('URLTemplate', ['url_full', 'url_base', 'path', 'hostname', 'port', 'username', 'password'])
 
 
 class Configurations:
@@ -82,18 +82,18 @@ class Configurations:
 
     def __setup_locked_url_or_start_from(self):
         # "https://www.cbc.ca/kidsnews/" ->kidsnews fields = ['www.cbc.ca', 'kidsnews']
-        http_or_https, fields = fields_in_url(self.url)
-        base_url = http_or_https + self.url.rstrip('/').replace(http_or_https, "").split('/')[0]
-        self.url = base_url + '/'
+        url_parsed = interpret_url(self.url)
+        self.url = url_parsed.url_base
+        fields = url_parsed.path.lstrip('/').split('/')
         if len(fields) > 1:
             if self.no_lock:  # We interpret subdomains as start_from
-                self.start_from = '/' + '/'.join(fields[1:])
+                self.start_from = url_parsed.url_full.replace(url_parsed.url_base, "")
             else:  # We interpret subdomains as locked_to subdomains
-                self.locked_url = '/' + '/'.join(fields[1:])
+                self.locked_url = url_parsed.url_full.replace(url_parsed.url_base, "")
                 fields_without_html = [field for field in fields if not field.endswith(('html', 'htm', 'php', 'shtml'))]
                 if '.php?' in fields_without_html[-1]:
                     fields_without_html = fields_without_html[:-1]
-                locked_subdomain = '/' + '/'.join(fields_without_html[1:])
+                locked_subdomain = '/' + '/'.join(fields_without_html[0:])
                 self.allowed_urls = [locked_subdomain, urljoin(self.url, locked_subdomain),
                                      re.sub(r"https://|http://", "//", urljoin(self.url, locked_subdomain))]
                 if self.custom_lock:
@@ -130,16 +130,29 @@ def dir_name_from_url(*, url):
     return dir_name
 
 
-def fields_in_url(url):
+def interpret_url(url: str) -> URLTemplate:
     """
-    https://kids.nationalgeographic.com/games/funny-fill-in/article/funny-fill-in-the-fast-and-the-flurryous
-    ['kids.nationalgeographic.com', 'games', 'funny-fill-in', 'article', 'funny-fill-in-the-fast-and-the-flurryous']
+    "http://admin:mypassword@192.168.1.224:8080/sd/20230928/images019/search?abcde"
+    url_full = 'http://192.168.1.224:8080/sd/20230928/images019/search?abcde'
+    url_base = 'http://192.168.1.224'
+    path = '/sd/20230928/images019/search'
+    hostname = 192.168.1.224
+    port = 8080
+    user_name = 'admin'
+    pass_word = 'mypassword'
     :param url:
-    :return: the fields split by '/'
+    :return:
     """
-    http_or_https = url.split('//')[0] + '//'
-    fields = url.rstrip('/').replace(http_or_https, "").split('/')
-    return URLFields(http_or_https, fields)
+    username, password = None, None
+    m = re.search("(http|https)://(.*:.*)@", url)
+    if m:
+        username, password = m[2].split(':')[0], m[2].split(':')[1]
+        url_full = re.sub("//.*:.*@", "//", url)
+    else:
+        url_full = url
+    output = urlparse(url_full)
+    url_base = output.scheme + "://" + output.hostname
+    return URLTemplate(url_full, url_base, output.path, output.hostname, output.port, username, password)
 
 
 def keep_only_unique_urls(visited_urls: list[str]) -> list[str]:
@@ -154,10 +167,10 @@ def keep_only_unique_urls(visited_urls: list[str]) -> list[str]:
     visited_urls = list(visited_urls)
     http_or_https = visited_urls[0].split('//')[0] + '//'
     index_html_urls = ['index.html', 'index.htm', 'index.shtml', 'index.php']
-    index_html_urls += [f"index{i}.html" for i in range(1, 10)]
-    index_html_urls += [f"index{i}.htm" for i in range(1, 10)]
-    index_html_urls += [f"index{i}.shtml" for i in range(1, 10)]
-    index_html_urls += [f"index{i}.php" for i in range(1, 10)]
+    index_html_urls += [f"index{i}.html" for i in range(1, 20)]
+    index_html_urls += [f"index{i}.htm" for i in range(1, 20)]
+    index_html_urls += [f"index{i}.shtml" for i in range(1, 20)]
+    index_html_urls += [f"index{i}.php" for i in range(1, 20)]
     urls_with_html = [url for url in visited_urls if url.endswith(('html', 'htm', 'shtml', 'php')) and
                       not any([url.endswith(k) for k in index_html_urls])]
     urls_no_html = [url.rstrip('/') + '/' for url in visited_urls if not url.endswith(('html', 'htm', 'shtml'))]
@@ -464,7 +477,7 @@ def crawl_website(*, cfg: Configurations, depth: int, connection: Queue, images_
                 save_to_file(cfg.log_file, [info_str], append=True)
                 save_visited_url_and_downloaded_images(cfg, del_empty=False, print_info=False)
                 cfg.update_excepts_and_censor_ini(printout=False)  # Reload the excepts and censored words
-        #except requests.exceptions.RequestException as e:
+        # except requests.exceptions.RequestException as e:
         except Exception as e:
             print_exception(e)
             time.sleep(cfg.connection_failures * 60)
@@ -663,4 +676,3 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         early_exit_by_ctrl_c(configurations)
 # endregion
-
