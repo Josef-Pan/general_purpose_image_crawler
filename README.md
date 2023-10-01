@@ -1,4 +1,4 @@
-# general_purpose_image_crawler
+# general purpose website image crawler
 This is a general purpose image crawler that works for most websites without recursion. This program will crawl website and download images at deisired size in separate processes. 
 
 1. It will save visited URLs and downloaded images into 2 ini files. Make sure you delete them if you want to crawl the whole website again ignoring links visited before.
